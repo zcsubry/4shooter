@@ -1,0 +1,66 @@
+==== Scope module usage ====
+
+# Load the scope module
+import scope
+
+# Create scope object
+s = scope.Scope()
+
+# Set the TCP host and port and connect to the interface
+s.set_port('192.168.3.16', 4000)
+s.connect()
+
+
+# Move the scope to home position and start tracking
+s.home()
+
+# Ask the current scope position
+s.get_coo()
+
+# Move the scope to position 
+s.move_coo('18:30:00:', "30:00:00")
+# or
+s.move_coo(18.5, 30)
+
+# Move the scope without waiting until the end
+s.move_coo(18.5, 30, wait=False)
+
+
+# Move the scope to the parking position and stop tracking
+s.park()
+
+
+
+==== Dome module usage =====
+
+# Load the dome module
+import dome
+
+# Create dome object
+d = dome.dome()
+
+# Set the TCP host and port and connect to the interface
+d.set_port('192.168.50.11', 23)
+d.connect()
+
+# Query the dome full status
+d.get_full_status()
+d.get_full_status(raw=True)
+
+# Get the dome status, dome positon, motor status and falisafe mode
+d.get_dome_status()
+d.get_dome_position()
+d.get_motor_status()
+d.get_dome_mode()
+
+# Open/close the dome
+d.open()
+d.close()
+
+# Open/close without waiting to the end
+d.open(wait=False)
+d.close(wait=False)
+
+# Stop the dome movement
+d.stop()
+
