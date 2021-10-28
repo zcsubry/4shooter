@@ -238,21 +238,21 @@ class TCPDevice(object):
 #	allowed time defined in $timeout is passed, returns False,
 #-----------------------------------------------------------------------------
 
-def waitfor(method, condition, value, timeout=30.0, poll=0.2, init=0.2, 
+	def waitfor(method, condition, value, timeout=30.0, poll=0.2, init=0.2, 
 		debug=False):
-	end = time.time() + timeout
-	if init > 0.0:
-		time.sleep(init)
-	while time.time() < end:
-		ret = method()
-		e = 'ret %s value' % condition
-		status = eval(e)
-		if debug:
-			print e, ret, value, status
-		if status:
-			return True
-		time.sleep(poll)
-	return False
+		end = time.time() + timeout
+		if init > 0.0:
+			time.sleep(init)
+		while time.time() < end:
+			ret = method()
+			e = 'ret %s value' % condition
+			status = eval(e)
+			if debug:
+				print e, ret, value, status
+			if status:
+				return True
+			time.sleep(poll)
+		return False
 
 #-----------------------------------------------------------------------------
 

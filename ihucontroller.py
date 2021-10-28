@@ -3,6 +3,7 @@
 
 import tcpdevice
 
+import time
 import subprocess
 from optparse import OptionParser
 from os import environ
@@ -21,7 +22,6 @@ class IHUcontroller(tcpdevice.TCPDevice):
 
 	def __init__(self, nmotor=24):
 		tcpdevice.TCPDevice.__init__(self)
-		self.set_format(':%s#\n')
 		self.nmotor = nmotor
 		return
 
@@ -82,22 +82,34 @@ class IHUcontroller(tcpdevice.TCPDevice):
 # IHUcontroller::build_command
 #-----------------------------------------------------------------------------
 
-	def build_command(self, cmd, motors=None, args=''):
+	def build_command(self, cmd, motors=None, args='', split=None):
 		motors = self.get_ids(motors)
 		args = self.get_ids(args)
+
+		if split:
+			motors_split = utils.split(motors, split)
+			args_split = utils.split(args, split)
+			cmds = []
+			for motor, arg in zip(motors_split, args_split):
+				cmds.append(self.build_command(cmd, motor, arg))
+			return cmds
+
 		if type(motors) is list and args == '':
 			cmd += 'M'
 			motorid = self.motor_bit(motors)
 			arg = ''
+
 		elif type(motors) is list and type(args) is list:
 			cmd += 'I'
 			motorid = self.motor_bit(motors)
 			args.reverse()
-			arg = ', '.join([str(x) for x in args])
+			arg = ','.join([str(x) for x in args])
+
 		elif type(motors) is list:
 			cmd += 'C'
 			motorid = self.motor_bit(motors)
 			arg = str(args)
+
 		else:
 			cmd += 'S'
 			motorid = str(motors)					
@@ -115,21 +127,39 @@ class IHUcontroller(tcpdevice.TCPDevice):
 #=============================================================================
 
 #-----------------------------------------------------------------------------
-# IHUcontroller:init
+# IHUcontroller:init_controller
 # Description:
-#	Initialize the controller unit. If $ids specified, then initialize the 
-#	motors attached to the selected port.
+#	Initialize the controller unit, putting all motors under current.
 #-----------------------------------------------------------------------------
 
-	def init(self, ids=None):
-		if not ids:
-			cmd = 'I'
-			rcv = self.command_read(cmd) 
-		else:
-			ids = self.get_ids(ids)
+	def init_controller(self):
+		cmd = 'I'
+		rcv = self.command_read(cmd)
+		return rcv
+
+#-----------------------------------------------------------------------------
+# IHUcontroller:init_ihu
+# Description:
+#	Initialize the the motor controllers corresponding to the selected IHU.
+#-----------------------------------------------------------------------------
+
+	def init_ihu(self, ids):
+		ports = []
+		for id in ids:
+			port = (id+2)/3
+			ports.append(port)
+		rcv = self.init_port(ports)
+		return rcv
+
+	def init_port(self, ids):
+		ids = self.get_ids(ids, listonly=True)
+		for rep in range(1,3): 
+			rcv = []
 			for id in ids:
 				cmd = 'II %d' % id
-				rcv = self.command_read(cmd) 
+				ret = self.command_read(cmd) 
+				rcv.append(ret)
+			time.sleep(1)
 		return rcv
 
 #-----------------------------------------------------------------------------
@@ -140,6 +170,7 @@ class IHUcontroller(tcpdevice.TCPDevice):
 
 	def init_all(self, id=None):
 		self.init()
+		time.sleep(1)
 		for i in range(1,9):
 			self.init(i)
 
@@ -197,7 +228,7 @@ class IHUcontroller(tcpdevice.TCPDevice):
 		return rcv
 		
 #-----------------------------------------------------------------------------
-# IHUcontroller::motor_wake
+# IHUcontroller::motor_sleep
 # Description:
 #	Send the selected motors to sleep.
 #-----------------------------------------------------------------------------
@@ -206,7 +237,8 @@ class IHUcontroller(tcpdevice.TCPDevice):
 		bits = self.motor_bit(ids)
 		cmd = 'MS %s' % bits
 		rcv = self.command_read(cmd)
-		return rcv
+		ret = [rcv for x in ids]
+		return ret
 		
 #-----------------------------------------------------------------------------
 
@@ -294,8 +326,9 @@ class IHUcontroller(tcpdevice.TCPDevice):
 #-----------------------------------------------------------------------------
 
 	def set_motor_position(self, ids, pos):
-		cmd = self.build_command('SMP', ids, pos)
-		rcv = self.command_read(cmd)
+		cmds = self.build_command('SMP', ids, pos, split=4)
+		for cmd in cmds:
+			rcv = self.command_read(cmd)
 		return rcv
 
 #-----------------------------------------------------------------------------
@@ -305,8 +338,9 @@ class IHUcontroller(tcpdevice.TCPDevice):
 #-----------------------------------------------------------------------------
 
 	def set_motor_target(self, ids, pos):
-		cmd = self.build_command('SMT', ids, pos)
-		rcv = self.command_read(cmd)
+		cmds = self.build_command('SMT', ids, pos, split=4)
+		for cmd in cmds:
+			rcv = self.command_read(cmd)
 		return rcv
 
 #-----------------------------------------------------------------------------
@@ -462,6 +496,24 @@ class IHU(object):
 		return self.get_result(ret)
 
 #-----------------------------------------------------------------------------
+# IHU::motor_sleep
+#-----------------------------------------------------------------------------
+
+	def motor_sleep(self, axis):
+		id = self.get_motor_id(axis)
+		ret = self.controller.motor_sleep(id)
+		return self.get_result(ret)
+
+#-----------------------------------------------------------------------------
+# IHU::motor_wake
+#-----------------------------------------------------------------------------
+
+	def motor_wake(self, axis):
+		id = self.get_motor_id(axis)
+		ret = self.controller.motor_wake(id)
+		return self.get_result(ret)
+
+#-----------------------------------------------------------------------------
 # IHU::get_position
 #-----------------------------------------------------------------------------
 
@@ -544,6 +596,10 @@ def read_command_line():
 			action='store_true')
 	parser.add_option('--reset', dest='reset', default=False,
 			action='store_true')
+	parser.add_option('--sleep', dest='sleep', default=False,
+			action='store_true')
+	parser.add_option('--wake', dest='wake', default=False,
+			action='store_true')
 	parser.add_option('--set', dest='setstr', default=None,
 			action='store', type='str')
 	parser.add_option('--make', dest='makestr', default=None,
@@ -574,6 +630,10 @@ def read_command_line():
 		options.action = 'get'
 	elif options.reset is True:
 		options.action = 'reset'
+	elif options.sleep is True:
+		options.action = 'sleep'
+	elif options.wake is True:
+		options.action = 'wake'
 	elif options.setstr is not None:
 		options.action = 'set'
 		str = options.setstr
@@ -619,7 +679,7 @@ if __name__=='__main__' :
 
 	c = IHUcontroller()
 	c.set_port(host, port)
-	ret = c.connect()
+	c.connect()
 
 	m1 = (options.id) * 3 - 2
 	m2 = m1 + 1
@@ -643,7 +703,17 @@ if __name__=='__main__' :
 	if action == 'new':
 		d.new(dev, target)
 
-	if action in ['get', 'set', 'reset', 'make', 'new']:
+	if action == 'sleep':
+		print 'sleep'
+		d.motor_sleep(dev)
+	if action == 'wake':
+		d.motor_wake(dev)
+
+	if action in ['get', 'set', 'reset']:
 		print d.get_position(dev)
+
+#	if action in ['make', 'new']:
+#		d.settle(dev)		
+#		print d.get_position(dev)		
 
 #=============================================================================
